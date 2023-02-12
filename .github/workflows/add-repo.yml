@@ -1,0 +1,85 @@
+name: 'add a repository to the organization'
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: name of the repository to be created
+        required: true
+      upstream-git: 
+        description: upstream url (e.g. aur, gitlab) of repository to clone and track
+        required: true
+      upstream-branch: 
+        description: upstream branch to track
+        required: false
+        default: master
+      db:
+        description: db to publish to
+        default: 'community'
+        required: false
+        type: choice
+        options:
+          - core
+          - extra
+          - community
+
+env:
+  repo: ${{ github.repository_owner }}/${{ inputs.name }}
+
+jobs:
+  repo-add:
+    ## fallbacks only needed for push-events
+    name: set up ${{ inputs.name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+        with:
+          fetch-depth: 1
+      - name: install dependencies
+        shell: bash
+        run: |
+          sudo apt-get install -y moreutils
+      - name: github login
+        shell: bash
+        run: |
+          echo ${{ secrets.management_token }} | gh auth login --with-token
+          gh auth setup-git
+      - name: create github repository
+        shell: bash
+        run: |
+          gh repo create ${{ env.repo }} --public || echo "exists already"
+          gh repo clone ${{ env.repo }} repo
+      - name: initialize repository
+        working-directory: ./repo
+        shell: bash
+        run: |
+          git remote add upstream ${{ inputs.upstream-git }}
+          git fetch upstream
+          git reset --hard upstream/${{ inputs.upstream-branch }}
+          git config user.email "bot@manjaro.download"
+          git config user.name "Repository Update Bot"
+      - name: write configuration
+        working-directory: ./repo
+        shell: bash
+        run: |
+          mkdir -p .github
+          config=.github/config.json
+          echo '{}' > .github/config.json
+          jq '.repo = "${{ inputs.upstream-git }}"' $config|sponge $config
+          jq '.branch = "${{ inputs.upstream-branch }}"' $config|sponge $config
+          jq '.db = "${{ inputs.db }}"' $config|sponge $config
+
+          cat .github/config.json
+      - name: copy template
+        shell: bash
+        run: |
+          cp -r pkg-template/* ./repo/.github/
+      - name: persist
+        working-directory: ./repo
+        shell: bash
+        run: |
+          ls -l .*
+          git add .github/*
+          git commit -m "chore: persist repository configuration"
+          git push --force
