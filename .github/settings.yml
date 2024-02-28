@@ -11,6 +11,7 @@ repository:
   allow_rebase_merge: false
   enable_automated_security_fixes: true
   delete_branch_on_merge: true
+  topics: arch, package
 
 branches:
   - name: master
